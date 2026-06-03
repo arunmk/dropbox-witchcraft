@@ -1638,7 +1638,7 @@ fn session_meta_spans(
     use ratatui::text::Span;
 
     let mut spans = vec![
-        Span::styled(format!("{} ", format_date(date)), Style::default().fg(Color::Green)),
+        Span::styled(format!("{date} "), Style::default().fg(Color::Green)),
         Span::styled(project.to_string(), Style::default().fg(Color::Cyan)),
     ];
     if source == "slack" {
@@ -2238,6 +2238,12 @@ mod tests {
     fn test_format_date() {
         assert_eq!(format_date("2025-01-15T10:30:00Z"), "Jan 15 10:30");
         assert_eq!(format_date("bad"), "??? ?? ??:??");
+    }
+
+    #[test]
+    fn test_session_meta_spans_preserves_formatted_date() {
+        let spans = session_meta_spans("May 12 10:09", "DM", "", "", "slack", "", "");
+        assert_eq!(spans[0].content.as_ref(), "May 12 10:09 ");
     }
 
     #[test]
