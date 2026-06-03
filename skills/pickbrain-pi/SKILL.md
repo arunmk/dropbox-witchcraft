@@ -45,7 +45,7 @@ This searches Pi sessions by default. Pass flags to override:
 If the tool is unavailable, run `pickbrain` via Bash:
 
 ```bash
-pickbrain --quiet --type pi "$ARGUMENTS"
+pickbrain -q --type pi "$ARGUMENTS"
 ```
 
 Pickbrain automatically ingests new sessions before each search. First run can take longer while building the local database.
@@ -62,18 +62,18 @@ Each result includes:
 Present results as a concise summary and quote the most relevant excerpts. To dig deeper:
 
 ```bash
-pickbrain --quiet --dump <session-id> --turns <start>-<end>
+pickbrain -q --dump <session-id> --turns <start>-<end>
 ```
 
 ## Useful CLI Filters
 
 ```bash
-pickbrain --quiet --type pi "<query>"       # only Pi sessions
-pickbrain --quiet --current "<query>"       # current calling session when detectable
-pickbrain --quiet --exclude-current "<query>"
-pickbrain --quiet --session <session-id> "<query>"
-pickbrain --quiet --since 7d "<query>"
-pickbrain --quiet -n 20 "<query>"
+pickbrain -q --type pi "<query>"       # only Pi sessions
+pickbrain -q --current "<query>"       # current calling session when detectable
+pickbrain -q --exclude-current "<query>"
+pickbrain -q --session <session-id> "<query>"
+pickbrain -q --since 7d "<query>"
+pickbrain -q -n 20 "<query>"
 ```
 
 ## Notes

@@ -60,7 +60,7 @@ function runPickbrain(
 	return new Promise((resolve, reject) => {
 		const child = spawn(pickbrainCommand(), args, {
 			cwd,
-			env: { ...process.env, PICKBRAIN_QUIET: "1", ...env },
+			env: { ...process.env, ...env },
 		});
 
 		let stdout = "";
@@ -124,7 +124,7 @@ function addDefaultScope(args: string[], params: PickbrainParams) {
 }
 
 function buildArgs(params: PickbrainParams): string[] {
-	const args: string[] = ["--quiet"];
+	const args: string[] = ["-q"];
 	if (params.current) args.push("--current");
 	if (params.excludeCurrent) args.push("--exclude-current");
 	if (params.session) args.push("--session", params.session);
@@ -141,9 +141,9 @@ function buildArgs(params: PickbrainParams): string[] {
 
 function parseSlashArgs(raw: string): string[] {
 	const text = raw.trim();
-	if (!text) return ["--quiet", "--type", "pi", "-n", String(DEFAULT_RESULTS)];
-	if (text.startsWith("-")) return ["--quiet", ...text.split(/\s+/)];
-	return ["--quiet", "--type", "pi", "-n", String(DEFAULT_RESULTS), text];
+	if (!text) return ["-q", "--type", "pi", "-n", String(DEFAULT_RESULTS)];
+	if (text.startsWith("-")) return ["-q", ...text.split(/\s+/)];
+	return ["-q", "--type", "pi", "-n", String(DEFAULT_RESULTS), text];
 }
 
 export default function (pi: ExtensionAPI) {

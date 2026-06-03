@@ -379,7 +379,7 @@ fn load_session_index() -> std::collections::HashMap<String, String> {
     names
 }
 
-pub fn ingest_codex(db: &mut DB) -> Result<usize> {
+pub fn ingest_codex(db: &mut DB, quiet: bool) -> Result<usize> {
     let home = std::env::var("HOME").unwrap_or_default();
     let sessions_dir = PathBuf::from(&home).join(".codex/sessions");
 
@@ -399,7 +399,7 @@ pub fn ingest_codex(db: &mut DB) -> Result<usize> {
         let mtime_ms = file_mtime_ms(&jsonl_path).unwrap_or(0);
         let sid = session_id_from_filename(&jsonl_path);
         let name = session_names.get(&sid).map(|s| s.as_str());
-        crate::print_ingest_path(&jsonl_path);
+        crate::print_ingest_path(&jsonl_path, quiet);
         match ingest_session(db, &jsonl_path, mtime_ms, name) {
             Ok(n) => session_count += n,
             Err(e) => {

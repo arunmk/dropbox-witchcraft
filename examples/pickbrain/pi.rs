@@ -402,7 +402,7 @@ fn matches_skip(path: &Path, skip_session: Option<&str>) -> bool {
     session_id_from_filename(path) == skip
 }
 
-pub fn ingest_pi(db: &mut DB, skip_session: Option<&str>) -> Result<usize> {
+pub fn ingest_pi(db: &mut DB, skip_session: Option<&str>, quiet: bool) -> Result<usize> {
     let dir = sessions_dir();
     if !dir.is_dir() {
         return Ok(0);
@@ -424,7 +424,7 @@ pub fn ingest_pi(db: &mut DB, skip_session: Option<&str>) -> Result<usize> {
             continue;
         }
         let mtime_ms = file_mtime_ms(&jsonl_path).unwrap_or(0);
-        crate::print_ingest_path(&jsonl_path);
+        crate::print_ingest_path(&jsonl_path, quiet);
         match ingest_session(db, &jsonl_path, mtime_ms) {
             Ok(n) => session_count += n,
             Err(e) => {

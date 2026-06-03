@@ -36,14 +36,8 @@ fn pickbrain_dir_overridden() -> bool {
         .unwrap_or(false)
 }
 
-pub(crate) fn quiet() -> bool {
-    env::var("PICKBRAIN_QUIET")
-        .map(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes"))
-        .unwrap_or(false)
-}
-
-pub(crate) fn print_ingest_path(path: &std::path::Path) {
-    if !quiet() {
+pub(crate) fn print_ingest_path(path: &std::path::Path, quiet: bool) {
+    if !quiet {
         println!("{}", path.display());
     }
 }
@@ -284,7 +278,13 @@ fn get_ppid(_pid: i32) -> Option<i32> {
     None
 }
 
-fn ingest(db_name: &PathBuf, skip_session: Option<&str>, stale_ms: i64, types: &[String]) -> Result<bool> {
+fn ingest(
+    db_name: &PathBuf,
+    skip_session: Option<&str>,
+    stale_ms: i64,
+    types: &[String],
+    quiet: bool,
+) -> Result<bool> {
     let mut db = DB::new(db_name.clone()).unwrap();
 
     let want = |src: &str| types.is_empty() || types.iter().any(|t| t == src);
@@ -296,20 +296,20 @@ fn ingest(db_name: &PathBuf, skip_session: Option<&str>, stale_ms: i64, types: &
     let (sessions, memories, authored, configs) = if want("claude") {
         let claude_skip = skip_session
             .filter(|_| watermark::is_fresh(&watermark::claude_path(), stale_ms));
-        claude_code::ingest_claude_code(&mut db, claude_skip)?
+        claude_code::ingest_claude_code(&mut db, claude_skip, quiet)?
     } else {
         (0, 0, 0, 0)
     };
 
     let codex_sessions = if want("codex") {
-        codex::ingest_codex(&mut db)?
+        codex::ingest_codex(&mut db, quiet)?
     } else {
         0
     };
 
     let pi_sessions = if want("pi") {
         let pi_skip = skip_session.filter(|_| watermark::is_fresh(&watermark::pi_path(), stale_ms));
-        pi::ingest_pi(&mut db, pi_skip)?
+        pi::ingest_pi(&mut db, pi_skip, quiet)?
     } else {
         0
     };
@@ -322,12 +322,12 @@ fn ingest(db_name: &PathBuf, skip_session: Option<&str>, stale_ms: i64, types: &
 
     let total = sessions + memories + authored + configs + codex_sessions + pi_sessions + slack_conversations;
     if total == 0 {
-        if !quiet() {
+        if !quiet {
             eprintln!("No new sessions to ingest.");
         }
         return Ok(false);
     }
-    if !quiet() {
+    if !quiet {
         eprintln!(
             "ingested {sessions} claude sessions, {codex_sessions} codex sessions, {pi_sessions} pi sessions, {slack_conversations} slack conversations, {memories} memory files, {authored} authored files, {configs} config files"
         );
@@ -2003,6 +2003,7 @@ fn main() -> Result<()> {
     let mut unread_only = false;
     let mut current = false;
     let mut exclude_current = false;
+    let mut quiet = false;
     let mut query_args: Vec<&str> = Vec::new();
     let mut iter = args.iter();
     while let Some(arg) = iter.next() {
@@ -2023,7 +2024,7 @@ fn main() -> Result<()> {
                 eprintln!("  --session ID         search within a session, channel, or thread");
                 eprintln!("  --since 24h|7d|2w    only search recent history");
                 eprintln!("  --type claude,codex,pi,slack  filter by source");
-                eprintln!("  --quiet              suppress ingest progress output");
+                eprintln!("  -q, --quiet          suppress ingest progress output");
                 eprintln!("  -n N                 number of results (0=unlimited, default: unlimited in TUI, 20 in pipe)");
                 eprintln!("  --dm                 only DMs (Slack)");
                 eprintln!("  --no-dm              exclude DMs (Slack)");
@@ -2035,8 +2036,8 @@ fn main() -> Result<()> {
                 eprintln!("  PICKBRAIN_DIR        override the pickbrain DB and state directory");
                 std::process::exit(0);
             }
-            "--quiet" => {
-                std::env::set_var("PICKBRAIN_QUIET", "1");
+            "--quiet" | "-q" => {
+                quiet = true;
             }
             "--nuke" => {
                 let db_name = db_path();
@@ -2179,7 +2180,7 @@ fn main() -> Result<()> {
     if needs_ingest(&db_name, active_session.as_deref(), stale_ms, &type_filter)? {
         match IngestLock::try_acquire(&db_name) {
             Ok(Some(_lock)) => {
-                match ingest(&db_name, active_session.as_deref(), stale_ms, &type_filter) {
+                match ingest(&db_name, active_session.as_deref(), stale_ms, &type_filter, quiet) {
                     Ok(have_changes) => {
                         if have_changes {
                             let db_rw = DB::new(db_name.clone()).unwrap();
