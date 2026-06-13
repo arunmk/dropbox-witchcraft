@@ -74,8 +74,8 @@ pub struct Witchcraft {
 
 // Safe: Reader (which owns a rusqlite::Connection, a !Send/!Sync type) is only
 // ever accessed from the Python thread while the GIL is held, ensuring
-// exclusive single-threaded access.  The indexer thread creates its own
-// separate DB connection and never shares state with Reader.
+// exclusive single-threaded access.  The indexer thread owns a separate
+// write connection to the same file and never shares state with Reader.
 unsafe impl Send for Witchcraft {}
 unsafe impl Sync for Witchcraft {}
 
