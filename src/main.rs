@@ -303,8 +303,10 @@ pub fn bulk_search(
         writer.flush().unwrap();
     }
     if embedder.is_some() {
+        println!("p50 embedder latency = {} ms", embedder_histogram.p50());
         println!("p95 embedder latency = {} ms", embedder_histogram.p95());
     }
+    println!("p50 total search latency = {} ms", histogram.p50());
     println!("p95 total search latency = {} ms", histogram.p95());
     witchcraft::log_bucket_io_counters();
     Ok(())
@@ -370,8 +372,8 @@ fn main() -> Result<()> {
     let _ = log::set_logger(&LOGGER).map(|()| log::set_max_level(LevelFilter::Info));
 
     let args: Vec<String> = env::args().collect();
-    let assets = std::path::PathBuf::from("assets");
-    let db_name = std::path::PathBuf::from("mydb.sqlite");
+    let assets = std::path::PathBuf::from(env::var("WARP_ASSETS").unwrap_or_else(|_| "assets".into()));
+    let db_name = std::path::PathBuf::from(env::var("WARP_DB").unwrap_or_else(|_| "mydb.sqlite".into()));
 
     if args.len() == 3 && args[1] == "readcsv" {
         let mut db = DB::new_fast(db_name).unwrap();

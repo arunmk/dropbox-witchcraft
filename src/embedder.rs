@@ -12,6 +12,10 @@ const DEFAULT_BATCH_SIZE: usize = 32;
 const PAD_BUCKET_WIDTH: usize = 64;
 
 pub(crate) fn embedding_batch_size() -> usize {
+    // The T5 encoder has no padding mask, so it must embed one document at a time.
+    if cfg!(not(any(feature = "modernbert", feature = "modernbert-quantized"))) {
+        return 1;
+    }
     std::env::var("WITCHCRAFT_EMBED_BATCH_SIZE")
         .ok()
         .and_then(|value| value.parse::<usize>().ok())

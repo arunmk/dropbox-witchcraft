@@ -20,6 +20,9 @@ assets/*
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
+*.sqlite.index
+*.sqlite.buckets.*
+output.txt
 lcov.info
 Cargo.lock
 
@@ -38,6 +41,10 @@ testset/treccovid/collection_map.json
 testset/treccovid/qrels.test.json
 testset/treccovid/questions.test.tsv
 .cache/
+datasets/eval/
+testset/eval/
+bench-results/
+.make-stamps/
 
 # Generated Neso AOT outputs.
 kernels/out/*
@@ -49,3 +56,4 @@ backup/
 scifact/
 xtr-base-en/
 *.safetensors
+datasets/public-mix.tsv

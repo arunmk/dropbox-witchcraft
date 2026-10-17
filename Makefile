@@ -352,6 +352,42 @@ financebench-score financebench-hybrid-score financebench-fulltext-score: prereq
 	$(CLI_BIN) $(if $(filter financebench-hybrid-score,$@),hybridcsv,$(if $(filter financebench-fulltext-score,$@),fulltextcsv,querycsv)) testset/financebench/questions.test.tsv output-$@.txt
 	target/release/trec-score output-$@.txt testset/financebench/collection_map.json testset/financebench/qrels.test.json
 
+# === Retrieval evaluation (see scripts/eval_suite.py) ===
+# EVAL_SUITE: smoke (nfcorpus), small (6 BEIR datasets), full (10), or dataset names.
+# EVAL_CONFIGS: default, ablation, ablation-nomodel, sweep, or config names.
+EVAL_SUITE ?= small
+EVAL_CONFIGS ?= ablation
+EVAL_SPLIT ?= test
+EVAL_ARGS ?=
+EVAL_PY := $(if $(wildcard $(PYTHON_BIN)),$(PYTHON_BIN),python3)
+
+eval-data:
+	$(EVAL_PY) scripts/eval_suite.py prepare --suite $(EVAL_SUITE)
+
+eval:
+	$(EVAL_PY) scripts/eval_suite.py run --suite $(EVAL_SUITE) --configs $(EVAL_CONFIGS) --split $(EVAL_SPLIT) $(EVAL_ARGS)
+
+eval-ablation:
+	$(EVAL_PY) scripts/eval_suite.py run --suite $(EVAL_SUITE) --configs ablation --split $(EVAL_SPLIT) $(EVAL_ARGS)
+
+# Choose a keep fraction on dev data, not on test data.
+eval-sweep:
+	$(EVAL_PY) scripts/eval_suite.py run --suite nfcorpus,fiqa --configs sweep --split dev $(EVAL_ARGS)
+
+# The full evaluation: ablation, dev sweeps and pruning check, with a summary.
+# EVAL_PLAN: quick (NFCorpus), standard (6 BEIR datasets), full (10 BEIR datasets).
+# Known-item sets in testset/eval are added automatically.
+EVAL_PLAN ?= standard
+eval-pipeline:
+	$(EVAL_PY) scripts/eval_suite.py pipeline --plan $(EVAL_PLAN) $(EVAL_ARGS)
+
+# The PR gate: the current default configuration (keep 70%, query salience on) on NFCorpus
+# must stay in range.
+# Quote each check: an unquoted ">=" is a shell redirection.
+EVAL_GATE_CHECKS ?= --check 'nfcorpus:ndcg@10>=0.31' --check 'nfcorpus:recall@100>=0.29'
+eval-gate:
+	$(EVAL_PY) scripts/eval_suite.py run --suite smoke --configs default --out bench-results/eval/gate $(EVAL_GATE_CHECKS) $(EVAL_ARGS)
+
 reindex:
 	make warp-cli EXTRA_FEATURES=deterministic
 	$(CLI_BIN) reindex
@@ -398,6 +434,12 @@ distclean:
 	buildemb \
 	distclean \
 	download \
+	eval \
+	eval-ablation \
+	eval-data \
+	eval-gate \
+	eval-pipeline \
+	eval-sweep \
 	dylib \
 	financebench \
 	financebench-files \

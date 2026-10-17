@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import random
 import shutil
 import sys
 import urllib.parse
@@ -13,6 +14,8 @@ from pathlib import Path
 
 
 DEFAULT_BEIR_BASE_URL = "https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets"
+# Evaluation splits. "train" is left out on purpose: it is for model training.
+SPLITS = ("dev", "test")
 
 
 def clean_field(value: str | None) -> str:
@@ -42,19 +45,23 @@ def has_beir_files(path: Path) -> bool:
     return (
         (path / "corpus.jsonl").is_file()
         and (path / "queries.jsonl").is_file()
-        and (path / "qrels" / "test.tsv").is_file()
+        and any((path / "qrels" / f"{split}.tsv").is_file() for split in SPLITS)
     )
 
 
 def download_and_extract(dataset: str, cache_dir: Path, base_url: str) -> Path:
+    # "cqadupstack/android" names the "android" subset of the "cqadupstack" archive.
+    archive_name, _, subset = dataset.partition("/")
     cache_dir.mkdir(parents=True, exist_ok=True)
-    url = f"{base_url.rstrip('/')}/{urllib.parse.quote(dataset)}.zip"
-    archive = cache_dir / f"{dataset}.zip"
+    url = f"{base_url.rstrip('/')}/{urllib.parse.quote(archive_name)}.zip"
+    archive = cache_dir / f"{archive_name}.zip"
 
     if not archive.is_file():
         print(f"downloading {url}", file=sys.stderr)
-        with urllib.request.urlopen(url) as response, archive.open("wb") as out:
+        tmp = archive.with_suffix(".zip.tmp")
+        with urllib.request.urlopen(url) as response, tmp.open("wb") as out:
             shutil.copyfileobj(response, out)
+        tmp.replace(archive)
 
     root = cache_dir / dataset
     if not has_beir_files(root):
@@ -62,6 +69,8 @@ def download_and_extract(dataset: str, cache_dir: Path, base_url: str) -> Path:
         with zipfile.ZipFile(archive) as zip_file:
             zip_file.extractall(cache_dir)
 
+    if subset:
+        return find_beir_root(cache_dir / archive_name / subset, subset)
     return find_beir_root(cache_dir, dataset)
 
 
@@ -81,7 +90,12 @@ def load_qrels(qrels_path: Path) -> dict[str, dict[str, int]]:
     return qrels
 
 
-def write_corpus(source_dir: Path, output_path: Path) -> int:
+def corpus_ids(source_dir: Path) -> list[str]:
+    with (source_dir / "corpus.jsonl").open(encoding="utf-8") as source:
+        return [json.loads(line)["_id"] for line in source]
+
+
+def write_corpus(source_dir: Path, output_path: Path, keep: set[str] | None = None) -> int:
     count = 0
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with (source_dir / "corpus.jsonl").open(encoding="utf-8") as source, output_path.open(
@@ -91,6 +105,8 @@ def write_corpus(source_dir: Path, output_path: Path) -> int:
         for line in source:
             doc = json.loads(line)
             doc_id = doc["_id"]
+            if keep is not None and doc_id not in keep:
+                continue
             title = clean_field(doc.get("title"))
             text = clean_field(doc.get("text"))
             body = f"{title} {text}".strip()
@@ -125,22 +141,57 @@ def write_json(path: Path, value: object) -> None:
         output.write("\n")
 
 
-def convert(source_dir: Path, output_name: str) -> None:
-    dataset_path = Path("datasets") / f"{output_name}.tsv"
-    testset_dir = Path("testset") / output_name
-    qrels = load_qrels(source_dir / "qrels" / "test.tsv")
+def sample_qrels(
+    qrels: dict[str, dict[str, int]], max_queries: int | None, rng: random.Random
+) -> dict[str, dict[str, int]]:
+    # Keep only queries with at least one relevant document, as BEIR evaluation does.
+    qrels = {q: docs for q, docs in qrels.items() if any(g > 0 for g in docs.values())}
+    if max_queries is None or len(qrels) <= max_queries:
+        return qrels
+    chosen = set(rng.sample(sorted(qrels), max_queries))
+    return {q: docs for q, docs in qrels.items() if q in chosen}
 
-    doc_count = write_corpus(source_dir, dataset_path)
-    query_count = write_queries(source_dir, testset_dir / "questions.test.tsv", qrels)
-    write_json(testset_dir / "qrels.test.json", qrels)
+
+def convert(
+    source_dir: Path,
+    output_name: str,
+    datasets_dir: Path = Path("datasets"),
+    testset_root: Path = Path("testset"),
+    max_queries: int | None = None,
+    max_docs: int | None = None,
+    seed: int = 42,
+) -> None:
+    rng = random.Random(seed)
+    dataset_path = datasets_dir / f"{output_name}.tsv"
+    testset_dir = testset_root / output_name
+
+    split_qrels = {}
+    for split in SPLITS:
+        path = source_dir / "qrels" / f"{split}.tsv"
+        if path.is_file():
+            split_qrels[split] = sample_qrels(load_qrels(path), max_queries, rng)
+
+    keep = None
+    if max_docs is not None:
+        # Keep every judged document for every split, then add random distractors.
+        # A smaller corpus is easier, so compare scores only at the same --max-docs.
+        judged = {doc for qrels in split_qrels.values() for docs in qrels.values() for doc in docs}
+        all_ids = corpus_ids(source_dir)
+        present = [doc for doc in all_ids if doc in judged]
+        others = [doc for doc in all_ids if doc not in judged]
+        room = max(0, max_docs - len(present))
+        keep = set(present) | set(rng.sample(others, min(room, len(others))))
+
+    doc_count = write_corpus(source_dir, dataset_path, keep)
     write_json(testset_dir / "collection_map.json", None)
-
-    qrel_count = sum(len(docs) for docs in qrels.values())
-    print(
-        f"wrote {dataset_path} ({doc_count} docs), "
-        f"{testset_dir}/questions.test.tsv ({query_count} queries), "
-        f"and {qrel_count} qrels"
-    )
+    for split, qrels in split_qrels.items():
+        query_count = write_queries(source_dir, testset_dir / f"questions.{split}.tsv", qrels)
+        write_json(testset_dir / f"qrels.{split}.json", qrels)
+        qrel_count = sum(len(docs) for docs in qrels.values())
+        print(
+            f"wrote {testset_dir}/questions.{split}.tsv ({query_count} queries, {qrel_count} qrels)"
+        )
+    print(f"wrote {dataset_path} ({doc_count} docs)")
 
 
 def parse_args() -> argparse.Namespace:
@@ -169,17 +220,34 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_BEIR_BASE_URL,
         help="base URL containing BEIR dataset zip files",
     )
+    parser.add_argument("--datasets-dir", default=Path("datasets"), type=Path)
+    parser.add_argument("--testset-dir", default=Path("testset"), type=Path)
+    parser.add_argument("--max-queries", type=int, help="sample at most this many queries per split")
+    parser.add_argument(
+        "--max-docs",
+        type=int,
+        help="keep all judged documents plus random distractors up to this corpus size",
+    )
+    parser.add_argument("--seed", type=int, default=42, help="seed for query and document samples")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    output_name = args.output_name or args.dataset.replace("-", "")
+    output_name = args.output_name or args.dataset.replace("-", "").replace("/", "-")
     if args.source_dir:
         source_dir = find_beir_root(args.source_dir, args.dataset)
     else:
         source_dir = download_and_extract(args.dataset, args.cache_dir, args.base_url)
-    convert(source_dir, output_name)
+    convert(
+        source_dir,
+        output_name,
+        args.datasets_dir,
+        args.testset_dir,
+        args.max_queries,
+        args.max_docs,
+        args.seed,
+    )
 
 
 if __name__ == "__main__":

@@ -33,6 +33,11 @@ impl Histogram {
         0
     }
 
+    /// Convenience: p50
+    pub fn p50(&self) -> u32 {
+        self.quantile(0.5)
+    }
+
     /// Convenience: p95
     pub fn p95(&self) -> u32 {
         self.quantile(0.95)

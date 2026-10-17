@@ -1,0 +1,49 @@
+# Retrieval quality gate: the current default configuration on NFCorpus.
+# Thresholds are in the Makefile (EVAL_GATE_CHECKS).
+# This runs on a CPU runner, so embedding takes longer than on a laptop GPU.
+name: retrieval-eval
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  nfcorpus-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.toml', '**/Cargo.toml') }}
+
+      - name: Cache model weights and BEIR data
+        uses: actions/cache@v4
+        with:
+          path: |
+            assets/modernbert-assets.tar.gz
+            .cache/beir
+          key: eval-assets-${{ hashFiles('Makefile') }}
+
+      - name: Run the NFCorpus gate
+        run: make eval-gate
+
+      - name: Upload the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: retrieval-eval-report
+          path: |
+            bench-results/eval/gate/report.md
+            bench-results/eval/gate/results.json
+            bench-results/eval/gate/runs/**/per_query.tsv

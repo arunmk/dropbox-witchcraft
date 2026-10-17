@@ -329,7 +329,14 @@ Run, and that
 make nfcorpus-score
 ```
 
-Runs and scores in the 0.31-0.33 range
+Runs and scores in the 0.31-0.33 range. Alternatively, run
+
+```
+make eval-gate
+```
+
+It runs the same check (and a Recall@100 check) on the BEIR copy of NFCorpus,
+and fails if a score is below its limit. CI runs this target on each pull request.
 
 NOTICE that nextest is necessary, simply using "cargo test" will lead
 to random test failures, because individual tests run in the same process,
@@ -363,6 +370,114 @@ IDs. Like the previous scorer, it averages submitted queries that have qrels;
 empty results count as zero and missing or unjudged queries are excluded.
 The standalone workspace tool builds without encoder features, weights, or GPU
 dependencies. NFCorpus, TRECCOVID, SciFact, and Spotlight scoring use it.
+
+## Retrieval evaluation ##
+
+`scripts/eval_suite.py` runs the evaluation suite. It downloads BEIR datasets,
+builds each encoder, indexes each dataset, runs each configuration, and writes
+`report.md` and `results.json` to `bench-results/eval/<time>/`. It needs only
+the Python standard library. All metrics come from `trec-score`.
+
+```
+make eval-data EVAL_SUITE=small         # download and convert the datasets
+make eval EVAL_SUITE=small              # the ablation on 6 datasets
+make eval-sweep                         # the keep-fraction sweep on dev splits
+make eval-gate                          # the PR gate on NFCorpus
+```
+
+Suites:
+- `smoke`: NFCorpus.
+- `small`: NFCorpus, SciFact, ArguAna, SciDocs, FiQA and CQADupStack (Android).
+- `full`: `small` plus TREC-COVID, Touché, and 100k-document samples of Quora and NQ.
+
+Configuration sets (`EVAL_CONFIGS` or `--configs`):
+- `ablation`: BM25 only, T5, ModernBERT with no pruning, plus 30% token pruning,
+  plus query salience (the default until 2026-10-17), plus BM25 fusion, and keep 70%
+  with query salience (the current default).
+- `sweep`: the default configuration at the keep fractions in `--keeps`.
+- `pruning-check`: no pruning, the old default (keep 30%), keep 50%, and keep 30%
+  with a minimum of 32 tokens for each document. All four use query salience.
+- `keep70-check`: no pruning and keep 70%, each with and without query salience,
+  and the current default.
+- `default`: the current default configuration only.
+
+Settings for a run:
+- `WARP_DOC_TOKEN_KEEP_FRACTION`: the fraction of document tokens to keep (default 0.7; 1.0 keeps all).
+  The default was 0.3 until 2026-10-17. At 0.7 with query salience, the evaluation found no significant
+  NDCG@10 loss against no pruning on 8 test datasets, and the index is 21–25% smaller than without pruning.
+- `WARP_DOC_TOKEN_MIN_KEEP`: the minimum number of tokens to keep in each document
+  (default 0). It protects short documents from pruning and has no effect on long documents.
+- `WARP_QUERY_TOKEN_SALIENCE=0`: turn off query token salience.
+- `WARP_DB` and `WARP_ASSETS`: the database and assets paths for `warp-cli`.
+
+The report contains:
+- NDCG@10, Recall@100, MRR@10 and Success@1 for each dataset, with the mean and the
+  minimum over datasets. A general-purpose change must not lower the minimum.
+- Paired differences between ablation steps, with 95% bootstrap intervals.
+- Index size, indexing throughput, peak memory and p50/p95 query latency.
+- Scores for short, medium and long relevant documents.
+- Judged@10, the fraction of the top 10 results that has a relevance judgment.
+
+To run the complete evaluation in one command, use the pipeline. The pipeline
+runs three stages with one shared index directory, and writes `summary.md`:
+
+1. `ablation` on the test splits: each configuration adds or removes one change.
+2. `sweep` on the dev splits: the keep fraction (`--keeps`) and the minimum kept
+   tokens for each document (`--mins`).
+3. `pruning-check` on the test splits: the default against the pruning candidates.
+
+```
+make eval-pipeline EVAL_PLAN=quick      # NFCorpus only, for a fast check
+make eval-pipeline                      # 6 BEIR datasets and all known-item sets
+scripts/eval_suite.py pipeline --plan full --check 'nfcorpus:ndcg@10>=0.31'
+```
+
+The pipeline exits with a non-zero status if a stage fails or a `--check` fails, so
+a scheduled job or a CI job can run it.
+
+Choose settings with `--split dev` (NFCorpus, FiQA and Quora have dev splits).
+Use the test split only for the final numbers.
+
+To compare a branch with master, run the same suite on each and compare the
+two result directories. The command fails on a significant regression:
+
+```
+scripts/eval_suite.py run --suite small --configs default --out bench-results/eval/master
+scripts/eval_suite.py run --suite small --configs default --out bench-results/eval/branch
+scripts/eval_suite.py compare bench-results/eval/master bench-results/eval/branch
+```
+
+`trec-score metrics` and `trec-score compare` give the same metrics and tests
+for a single results file.
+
+### Known-item test sets ###
+
+`scripts/make_known_item_set.py` makes a known-item test set from any corpus TSV.
+For each sampled document, Claude writes a keyword query, a question and a vague
+query. The source document is the correct result. The script needs the
+`anthropic` package and API credentials, and each document costs one request.
+
+```
+uv pip install --python env/bin/python anthropic
+env/bin/python scripts/make_known_item_set.py corpus.tsv --name my-files --docs 300
+scripts/eval_suite.py run --suite my-files --configs ablation
+```
+
+CAUTION: Generated queries often use words from the document, so BM25 scores can be
+too high. The script prints the word overlap for each query style, and each report
+has a slice for each overlap range. To make harder queries, set a limit for each
+style. The script then asks Claude to write each query above its limit again:
+
+```
+env/bin/python scripts/make_known_item_set.py corpus.tsv --name hard-ki --docs 300 \
+    --max-overlap keyword=0.5,question=0.4,vague=0.3 --rewrites 2
+```
+
+Do not tune settings on a generated set alone. Do not use private user data.
+
+`scripts/fetch_public_corpus.py` makes a public corpus that is similar to a personal
+file collection: Enron emails, GitHub README files, Python files and Wikipedia pages.
+It needs `pyarrow`.
 
 # License
 

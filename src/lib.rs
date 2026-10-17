@@ -272,11 +272,15 @@ fn model_id_prefix() -> &'static str {
 }
 
 fn model_id_for_dim(dim: usize) -> String {
-    let prefix = format!(
-        "{}-p{:03}",
-        model_id_prefix(),
-        (document_token_keep_fraction() * 100.0).round() as usize
-    );
+    let prefix = if ENCODER_HAS_TOKEN_GATE {
+        format!(
+            "{}-p{:03}",
+            model_id_prefix(),
+            (document_token_keep_fraction() * 100.0).round() as usize
+        )
+    } else {
+        model_id_prefix().to_string()
+    };
     if dim == DEFAULT_EMBEDDING_DIM {
         prefix
     } else {
@@ -288,12 +292,25 @@ fn document_token_keep_fraction() -> f64 {
     std::env::var("WARP_DOC_TOKEN_KEEP_FRACTION")
         .ok()
         .and_then(|value| value.parse::<f64>().ok())
-        .filter(|value| value.is_finite() && *value > 0.0 && *value < 1.0)
-        .unwrap_or(0.3)
+        .filter(|value| value.is_finite() && *value > 0.0 && *value <= 1.0)
+        .unwrap_or(0.7)
+}
+
+// T5 has no token gate, so only ModernBERT builds prune and weight tokens.
+const ENCODER_HAS_TOKEN_GATE: bool = cfg!(any(feature = "modernbert", feature = "modernbert-quantized"));
+
+// The minimum number of tokens that pruning keeps in each document (default 0: no
+// minimum). It protects short documents and has no effect on long documents.
+// Like the keep fraction, this setting is not part of the model ID.
+fn document_token_min_keep() -> usize {
+    std::env::var("WARP_DOC_TOKEN_MIN_KEEP")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(0)
 }
 
 pub fn query_token_salience_enabled() -> bool {
-    !matches!(
+    ENCODER_HAS_TOKEN_GATE && !matches!(
         std::env::var("WARP_QUERY_TOKEN_SALIENCE").as_deref(),
         Ok("0") | Ok("false") | Ok("False") | Ok("FALSE") | Ok("off") | Ok("OFF")
     )
@@ -3074,6 +3091,7 @@ fn prune_document_embeddings_by_gate_fraction(
     counts: &[u32],
     gate_scores: &[f32],
     keep_fraction: f64,
+    min_keep: usize,
 ) -> Result<PrunedDocumentEmbeddings> {
     let (rows, cols) = embeddings.dims2()?;
     anyhow::ensure!(
@@ -3097,7 +3115,7 @@ fn prune_document_embeddings_by_gate_fraction(
     );
 
     let keep = ((rows as f64) * keep_fraction).ceil() as usize;
-    let keep = keep.clamp(1, rows);
+    let keep = keep.max(min_keep).clamp(1, rows);
     let mut ranked: Vec<usize> = (0..rows).collect();
     ranked.sort_unstable_by(|&a, &b| {
         gate_scores[b]
@@ -3149,6 +3167,36 @@ fn prune_document_embeddings_by_gate_fraction(
         embeddings: pruned,
         counts: pruned_counts,
     })
+}
+
+#[cfg(test)]
+mod pruning_tests {
+    use super::*;
+
+    fn prune(gates: &[f32], counts: &[u32], keep: f64, min_keep: usize) -> Vec<u32> {
+        let rows = gates.len();
+        let embeddings = Tensor::zeros((rows, 4), DType::F32, &Device::Cpu).unwrap();
+        let offsets: Vec<(usize, usize)> = (0..rows).map(|i| (i, i + 1)).collect();
+        let tokens: Vec<String> = (0..rows).map(|i| format!("t{i}")).collect();
+        prune_document_embeddings_by_gate_fraction(
+            &embeddings, &offsets, &tokens, counts, gates, keep, min_keep,
+        )
+        .unwrap()
+        .counts
+    }
+
+    #[test]
+    fn min_keep_protects_short_documents() {
+        let gates = [9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 1.0, 0.5];
+        let counts = [6, 2];
+        assert_eq!(prune(&gates, &counts, 0.25, 0), vec![2, 0]);
+        assert_eq!(prune(&gates, &counts, 0.25, 3), vec![3, 0]);
+        // The minimum never asks for more tokens than the document has.
+        assert_eq!(prune(&gates, &counts, 0.25, 20), vec![6, 2]);
+        // A long document already keeps more than the minimum.
+        let long = vec![1.0f32; 40];
+        assert_eq!(prune(&long, &[40], 0.25, 3), vec![10]);
+    }
 }
 
 #[cfg(debug_assertions)]
@@ -3205,20 +3253,24 @@ pub fn cached_embeddings_from_output(
         .to_device(&Device::Cpu)?
         .to_dtype(DType::F32)?;
     let counts = token_counts_for_lens(body, lens, &output.offsets)?;
-    let gate_scores = output.gate_scores.as_ref().ok_or_else(|| {
-        anyhow::anyhow!("document token pruning requires token_gate tensors in ModernBERT assets")
-    })?;
     let unpruned_rows = embeddings.dims2()?.0;
-    let pruned = prune_document_embeddings_by_gate_fraction(
-        &embeddings,
-        &output.offsets,
-        &output.tokens,
-        &counts,
-        gate_scores,
-        document_token_keep_fraction(),
-    )?;
-    let embeddings = pruned.embeddings;
-    let counts = pruned.counts;
+    let (embeddings, counts) = if ENCODER_HAS_TOKEN_GATE {
+        let gate_scores = output.gate_scores.as_ref().ok_or_else(|| {
+            anyhow::anyhow!("document token pruning requires token_gate tensors in ModernBERT assets")
+        })?;
+        let pruned = prune_document_embeddings_by_gate_fraction(
+            &embeddings,
+            &output.offsets,
+            &output.tokens,
+            &counts,
+            gate_scores,
+            document_token_keep_fraction(),
+            document_token_min_keep(),
+        )?;
+        (pruned.embeddings, pruned.counts)
+    } else {
+        (embeddings, counts)
+    };
     let (rows, cols) = embeddings.dims2()?;
     let dt = now.elapsed().as_secs_f64();
     debug!(
