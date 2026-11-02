@@ -130,6 +130,68 @@ part of that corpus changes over time, so a corpus that is fetched again can
 give slightly different ranks. The builder always adds the recorded text of each
 case document.
 
+## Manual tests
+
+Two manual tests show the failure and the fix. Run both tests from the
+repository root.
+
+### Pass/fail test: semantic search (`make eval-regression`)
+
+This test is deterministic, and it shows the failure clearly.
+
+```
+make eval-regression                                  # the current default: both checks pass
+make eval-regression EVAL_REGRESSION_CONFIGS=mb-default   # the old 30% default: both checks fail
+```
+
+| Configuration | `regress-short-cqa` Recall@100 | `regress-short-mix` Recall@100 | Result |
+| --- | --- | --- | --- |
+| Keep 70% (current default) | 0.917 | 0.818 | pass |
+| Keep 30% (`mb-default`) | 0.000 | 0.000 | fail |
+
+The first run downloads CQADupStack (Android) and builds the indexes, which takes
+approximately 10 minutes on an Apple Silicon Mac. The results are in
+`bench-results/eval/regression-<configuration>/`.
+
+### Statistical test: Pickbrain (`make pickbrain-short-doc-test`)
+
+This test shows the effect in Pickbrain, the real application. In Pickbrain,
+BM25 keyword search finds a short note when the query contains rare words of the
+note, and Pickbrain shows only its best results. Also, the random seed of each
+Pickbrain index moves single notes by many places. So this test reports a rate
+over 420 queries, not a pass or a fail for single notes.
+
+```
+make pickbrain-short-doc-test                                   # 2 builds for each side
+make pickbrain-short-doc-test PICKBRAIN_TEST_ARGS="--builds 3"  # more builds
+env/bin/python scripts/pickbrain_short_doc_test.py --limit 20   # a quick check
+```
+
+The test writes the public mixed corpus as Claude memory notes into a temporary
+directory, indexes the notes with keep 30% and with the default of `./pickbrain`,
+and runs each query of `pickbrain-queries.jsonl` against both indexes. The test
+uses a temporary `HOME` and `PICKBRAIN_DIR`, so the test never reads your real
+sessions and never changes your real Pickbrain database. To compare with a
+Pickbrain binary from master, use `--before-bin <path>`.
+
+The test needs the public mixed corpus in `datasets/eval/public-mix-hard.tsv` or
+`datasets/public-mix.tsv`. To make the corpus, run
+`env/bin/python scripts/fetch_public_corpus.py datasets/public-mix.tsv --per-source 1000`.
+
+Result on 2026-11-02, with 2 builds on an Apple Silicon Mac:
+
+| Build | Notes shown, keep 30% | Notes shown, keep 70% | In the top 5, 30% / 70% | Shown only at 70% / only at 30% |
+| --- | --- | --- | --- | --- |
+| 1 | 284 of 420 (67.6%) | 306 of 420 (72.9%) | 239 / 271 | 38 / 16 |
+| 2 | 282 of 420 (67.1%) | 300 of 420 (71.4%) | 239 / 255 | 33 / 15 |
+
+Keep 70% showed 18-22 more short notes than keep 30% in both builds. Single notes
+move in both directions, so look at the rates, not at single notes.
+
+`pickbrain-queries.jsonl` holds the 420 known-item queries whose document has
+fewer than 50 words (130 Enron emails and Wikipedia pages), with the text of
+each document. `scripts/short_doc_regression.py select-pickbrain` writes the file.
+
 ## Limits
 
 - **The cases are a regression check, not a quality measure.** The cases were

@@ -391,9 +391,17 @@ eval-gate:
 # Short-document regression: queries whose short relevant documents the old 30% default
 # removed from the top 100 (testset/regression/short-docs/README.md). At the current default,
 # 11 of 12 and 9 of 11 cases are in the top 100; each check allows one more lost case.
+# EVAL_REGRESSION_CONFIGS=mb-default runs the old 30% configuration, which must fail the checks.
 EVAL_REGRESSION_CHECKS ?= --check 'regress-short-cqa:recall@100>=0.83' --check 'regress-short-mix:recall@100>=0.72'
+EVAL_REGRESSION_CONFIGS ?= default
 eval-regression:
-	$(EVAL_PY) scripts/eval_suite.py run --suite regression --configs default --out bench-results/eval/regression $(EVAL_REGRESSION_CHECKS) $(EVAL_ARGS)
+	$(EVAL_PY) scripts/eval_suite.py run --suite regression --configs $(EVAL_REGRESSION_CONFIGS) --out bench-results/eval/regression-$(EVAL_REGRESSION_CONFIGS) $(EVAL_REGRESSION_CHECKS) $(EVAL_ARGS)
+
+# Statistical Pickbrain test for short notes: keep 30% against the default of ./pickbrain.
+# PICKBRAIN_TEST_ARGS: for example --builds 2, or --before-bin <a pickbrain built from master>.
+PICKBRAIN_TEST_ARGS ?= --builds 2
+pickbrain-short-doc-test: pickbrain
+	$(EVAL_PY) scripts/pickbrain_short_doc_test.py $(PICKBRAIN_TEST_ARGS)
 
 reindex:
 	make warp-cli EXTRA_FEATURES=deterministic
@@ -467,6 +475,7 @@ distclean:
 	trec-score \
 	pickbrain \
 	pickbrain-install \
+	pickbrain-short-doc-test \
 	prereqs \
 	python-build-deps \
 	python-dev \

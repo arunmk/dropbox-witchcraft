@@ -18,6 +18,11 @@ Subcommands:
             regress-short-cqa  BEIR CQADupStack (Android)
             regress-short-mix  the public mixed corpus (scripts/fetch_public_corpus.py)
 
+  select-pickbrain
+          Write testset/regression/short-docs/pickbrain-queries.jsonl: every
+          known-item query whose document has fewer than --max-words words,
+          for scripts/pickbrain_short_doc_test.py.
+
   scripts/short_doc_regression.py select --results bench-results/eval/keep70-check
   scripts/short_doc_regression.py build
   scripts/eval_suite.py run --suite regression --configs default
@@ -32,6 +37,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CASES = ROOT / "testset" / "regression" / "short-docs" / "cases.jsonl"
+PICKBRAIN_QUERIES = ROOT / "testset" / "regression" / "short-docs" / "pickbrain-queries.jsonl"
+# The known-item sets over the public mixed corpus, with the splits to use.
+KNOWN_ITEM_SETS = ["public-mix-ki", "public-mix-hard"]
 DATASETS_DIR = ROOT / "datasets" / "eval"
 TESTSET_DIR = ROOT / "testset" / "eval"
 
@@ -176,6 +184,38 @@ def build(args) -> int:
     return 0
 
 
+def select_pickbrain(args) -> int:
+    """All short-document known-item queries, for the statistical Pickbrain test."""
+    corpus = read_tsv(DATASETS_DIR / "public-mix-hard.tsv")
+    out = []
+    for name in KNOWN_ITEM_SETS:
+        records = TESTSET_DIR / name / "queries.jsonl"
+        if not records.is_file():
+            print(f"{name}: no queries.jsonl; skipped", file=sys.stderr)
+            continue
+        for r in map(json.loads, records.open(encoding="utf-8")):
+            prefix = r["doc_id"].split(":")[0]
+            text = corpus.get(r["doc_id"])
+            if text is None or prefix in EXCLUDED_SOURCES or len(text.split()) >= args.max_words:
+                continue
+            out.append({
+                "query_id": f"{name}:{r['split']}:{r['query_id']}",
+                "query": r["query"],
+                "query_style": r["style"],
+                "query_overlap": round(r["overlap"], 3),
+                "doc_id": r["doc_id"],
+                "words": len(text.split()),
+                "source": MIX_SOURCES[prefix],
+                "text": text,
+            })
+    with PICKBRAIN_QUERIES.open("w", encoding="utf-8") as f:
+        for record in out:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    docs = len({r["doc_id"] for r in out})
+    print(f"wrote {PICKBRAIN_QUERIES.relative_to(ROOT)}: {len(out)} queries for {docs} short documents")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -186,8 +226,11 @@ def main() -> int:
     p.add_argument("--also", nargs="*", default=["mb-keep070-qsal"], help="more configurations to record ranks for")
     p.add_argument("--max-words", type=int, default=50, help="every relevant document has fewer words than this")
     sub.add_parser("build", help="write the regression datasets from cases.jsonl")
+    p = sub.add_parser("select-pickbrain", help="write the short-document queries for the Pickbrain test")
+    p.add_argument("--max-words", type=int, default=50, help="every document has fewer words than this")
     args = parser.parse_args()
-    return select(args) if args.command == "select" else build(args)
+    commands = {"select": select, "build": build, "select-pickbrain": select_pickbrain}
+    return commands[args.command](args)
 
 
 if __name__ == "__main__":
