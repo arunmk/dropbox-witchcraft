@@ -57,3 +57,4 @@ scifact/
 xtr-base-en/
 *.safetensors
 datasets/public-mix.tsv
+datasets/public-mix.tsv.tmp

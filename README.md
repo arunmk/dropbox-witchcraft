@@ -485,9 +485,12 @@ env/bin/python scripts/make_known_item_set.py corpus.tsv --name hard-ki --docs 3
 
 Do not tune settings on a generated set alone. Do not use private user data.
 
-`scripts/fetch_public_corpus.py` makes a public corpus that is similar to a personal
-file collection: Enron emails, GitHub README files, Python files and Wikipedia pages.
-It needs `pyarrow`.
+`make public-mix-corpus` makes a public corpus that is similar to a personal file
+collection: 1,000 Enron emails, 1,000 GitHub files (README and Python) and 1,000
+Wikipedia pages, in `datasets/public-mix.tsv`. The target runs
+`scripts/fetch_public_corpus.py` and installs `pyarrow` in `env/` when necessary. Set
+`PUBLIC_MIX_PER_SOURCE` to change the number of documents from each source. The GitHub
+part changes over time, so a corpus that is fetched again differs from an earlier corpus.
 
 # License
 

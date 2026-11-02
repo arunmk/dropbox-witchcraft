@@ -397,10 +397,27 @@ EVAL_REGRESSION_CONFIGS ?= default
 eval-regression:
 	$(EVAL_PY) scripts/eval_suite.py run --suite regression --configs $(EVAL_REGRESSION_CONFIGS) --out bench-results/eval/regression-$(EVAL_REGRESSION_CONFIGS) $(EVAL_REGRESSION_CHECKS) $(EVAL_ARGS)
 
+# The public mixed corpus: 1,000 Enron emails, 1,000 GitHub files (README and Python)
+# and 1,000 Wikipedia pages, for the known-item sets and the Pickbrain test. The
+# fetch downloads one Parquet shard of each Hugging Face dataset (several hundred MB,
+# cached in .cache/public-corpus) and README files from GitHub. The GitHub part changes
+# over time, so a corpus fetched again is not the same as an earlier corpus. For that
+# reason, the target runs only when the file is missing; the known-item sets and the
+# regression cases depend on the corpus that exists. Delete the file to fetch again.
+PUBLIC_MIX_PER_SOURCE ?= 1000
+datasets/public-mix.tsv: | env/pyvenv.cfg
+	$(PYTHON_BIN) -c "import pyarrow" 2>/dev/null || uv pip install --python $(PYTHON_BIN) pyarrow
+	$(PYTHON_BIN) scripts/fetch_public_corpus.py $@.tmp --per-source $(PUBLIC_MIX_PER_SOURCE)
+	mv $@.tmp $@
+
+public-mix-corpus: datasets/public-mix.tsv
+
 # Statistical Pickbrain test for short notes: keep 30% against the default of ./pickbrain.
 # PICKBRAIN_TEST_ARGS: for example --builds 2, or --before-bin <a pickbrain built from master>.
+# The test makes the corpus only when neither corpus file exists.
 PICKBRAIN_TEST_ARGS ?= --builds 2
-pickbrain-short-doc-test: pickbrain
+PICKBRAIN_TEST_CORPUS := $(if $(wildcard datasets/eval/public-mix-hard.tsv datasets/public-mix.tsv),,datasets/public-mix.tsv)
+pickbrain-short-doc-test: pickbrain $(PICKBRAIN_TEST_CORPUS)
 	$(EVAL_PY) scripts/pickbrain_short_doc_test.py $(PICKBRAIN_TEST_ARGS)
 
 reindex:
@@ -476,6 +493,7 @@ distclean:
 	pickbrain \
 	pickbrain-install \
 	pickbrain-short-doc-test \
+	public-mix-corpus \
 	prereqs \
 	python-build-deps \
 	python-dev \

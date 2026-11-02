@@ -16,7 +16,7 @@ Subcommands:
   build   Write the evaluable datasets from cases.jsonl, with the original
           corpus of each case as the distractors:
             regress-short-cqa  BEIR CQADupStack (Android)
-            regress-short-mix  the public mixed corpus (scripts/fetch_public_corpus.py)
+            regress-short-mix  the public mixed corpus (make public-mix-corpus)
 
   select-pickbrain
           Write testset/regression/short-docs/pickbrain-queries.jsonl: every
@@ -152,7 +152,7 @@ def build(args) -> int:
         corpus_path = next((p for p in spec["corpus"] if p.is_file()), None)
         if corpus_path is None:
             hint = ("scripts/eval_suite.py prepare --suite cqadupstack-android" if source == "cqadupstack-android"
-                    else "env/bin/python scripts/fetch_public_corpus.py datasets/public-mix.tsv --per-source 1000")
+                    else "make public-mix-corpus")
             raise SystemExit(f"{spec['name']}: no distractor corpus; make one with: {hint}")
         corpus = read_tsv(corpus_path)
         # The case documents are always present with their recorded text, also when a

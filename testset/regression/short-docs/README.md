@@ -175,8 +175,8 @@ sessions and never changes your real Pickbrain database. To compare with a
 Pickbrain binary from master, use `--before-bin <path>`.
 
 The test needs the public mixed corpus in `datasets/eval/public-mix-hard.tsv` or
-`datasets/public-mix.tsv`. To make the corpus, run
-`env/bin/python scripts/fetch_public_corpus.py datasets/public-mix.tsv --per-source 1000`.
+`datasets/public-mix.tsv`. `make pickbrain-short-doc-test` makes the corpus when
+neither file exists. To make the corpus separately, run `make public-mix-corpus`.
 
 Result on 2026-11-02, with 2 builds on an Apple Silicon Mac:
 

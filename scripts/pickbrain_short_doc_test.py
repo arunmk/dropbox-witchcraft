@@ -66,8 +66,7 @@ def note_name(doc_id: str) -> str:
 def write_notes(work: Path, queries: list[dict]) -> Path:
     corpus_path = next((p for p in CORPORA if p.is_file()), None)
     if corpus_path is None:
-        raise SystemExit("no public mixed corpus; make one with:\n"
-                         "  env/bin/python scripts/fetch_public_corpus.py datasets/public-mix.tsv --per-source 1000")
+        raise SystemExit("no public mixed corpus; make one with: make public-mix-corpus")
     with corpus_path.open(encoding="utf-8", newline="") as f:
         docs = {row[0]: row[1] for row in csv.reader(f, delimiter="\t") if len(row) >= 2}
     for q in queries:
