@@ -438,6 +438,16 @@ a scheduled job or a CI job can run it.
 Choose settings with `--split dev` (NFCorpus, FiQA and Quora have dev splits).
 Use the test split only for the final numbers.
 
+### Short-document regression check ###
+
+`make eval-regression` checks 23 queries whose short relevant documents (fewer than
+50 words) the old 30% pruning default removed from the top 100 results. The check
+requires Recall@100 >= 0.83 on `regress-short-cqa` (12 CQADupStack questions) and
+>= 0.72 on `regress-short-mix` (11 short emails and Wikipedia stubs). See
+`testset/regression/README.md` for the purpose of the regression sets, and
+`testset/regression/short-docs/README.md` for the failure mode, the selection
+criteria and the limits of the cases.
+
 To compare a branch with master, run the same suite on each and compare the
 two result directories. The command fails on a significant regression:
 

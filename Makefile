@@ -388,6 +388,13 @@ EVAL_GATE_CHECKS ?= --check 'nfcorpus:ndcg@10>=0.31' --check 'nfcorpus:recall@10
 eval-gate:
 	$(EVAL_PY) scripts/eval_suite.py run --suite smoke --configs default --out bench-results/eval/gate $(EVAL_GATE_CHECKS) $(EVAL_ARGS)
 
+# Short-document regression: queries whose short relevant documents the old 30% default
+# removed from the top 100 (testset/regression/short-docs/README.md). At the current default,
+# 11 of 12 and 9 of 11 cases are in the top 100; each check allows one more lost case.
+EVAL_REGRESSION_CHECKS ?= --check 'regress-short-cqa:recall@100>=0.83' --check 'regress-short-mix:recall@100>=0.72'
+eval-regression:
+	$(EVAL_PY) scripts/eval_suite.py run --suite regression --configs default --out bench-results/eval/regression $(EVAL_REGRESSION_CHECKS) $(EVAL_ARGS)
+
 reindex:
 	make warp-cli EXTRA_FEATURES=deterministic
 	$(CLI_BIN) reindex
@@ -439,6 +446,7 @@ distclean:
 	eval-data \
 	eval-gate \
 	eval-pipeline \
+	eval-regression \
 	eval-sweep \
 	dylib \
 	financebench \

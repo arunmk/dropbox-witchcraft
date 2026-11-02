@@ -65,6 +65,12 @@ DATASETS = {
                        note="short questions, duplicates (sampled)"),
     "nq-100k": dict(beir="nq", max_docs=100_000, max_queries=1000,
                     note="Wikipedia, natural questions (sampled)"),
+    # Regression sets: queries whose short relevant documents pruning once removed from the
+    # top 100. scripts/short_doc_regression.py builds them; see testset/regression/short-docs/.
+    "regress-short-cqa": dict(builder="short_doc_regression.py",
+                              note="regression: short CQADupStack questions lost by pruning"),
+    "regress-short-mix": dict(builder="short_doc_regression.py",
+                              note="regression: short emails and Wikipedia stubs lost by pruning"),
 }
 
 SUITES = {
@@ -72,6 +78,7 @@ SUITES = {
     "small": ["nfcorpus", "scifact", "arguana", "scidocs", "fiqa", "cqadupstack-android"],
 }
 SUITES["full"] = SUITES["small"] + ["trec-covid", "touche", "quora-100k", "nq-100k"]
+SUITES["regression"] = ["regress-short-cqa", "regress-short-mix"]
 
 MODERNBERT = "modernbert-quantized"
 T5 = "t5-quantized"
@@ -285,6 +292,13 @@ def prepare(names: list[str], cache_dir: Path) -> None:
         if name not in DATASETS:
             raise SystemExit(f"{name}: custom dataset files are missing in {TESTSET_DIR / name}")
         spec = DATASETS[name]
+        if "builder" in spec:
+            # A regression set needs the corpus of its source dataset.
+            if name == "regress-short-cqa":
+                prepare(["cqadupstack-android"], cache_dir)
+            print(f"{name}: building with scripts/{spec['builder']}")
+            subprocess.run([sys.executable, str(ROOT / "scripts" / spec["builder"]), "build"], cwd=ROOT, check=True)
+            continue
         cmd = [sys.executable, str(ROOT / "scripts" / "prepare_beir_dataset.py"), spec["beir"],
                "--output-name", name, "--cache-dir", str(cache_dir),
                "--datasets-dir", str(DATASETS_DIR), "--testset-dir", str(TESTSET_DIR)]
