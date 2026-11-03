@@ -50,7 +50,7 @@ or to the ranking code does not bring the failure back without a failed check.
 
 | Set | Folder | Cases | What the set protects |
 | --- | --- | --- | --- |
-| Short documents | [`short-docs/`](short-docs/README.md) | 23 | Short questions, emails and Wikipedia stubs that pruning once removed from the top 100 |
+| Short documents | [`short-docs/`](short-docs/README.md) | 28 | Short questions, emails and Wikipedia stubs that pruning once removed from the top 100 |
 
 `short-docs/README.md` explains the failure in detail, with an example document,
 the tokens that pruning kept and removed, and the ranks before and after the

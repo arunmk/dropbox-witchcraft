@@ -1,6 +1,6 @@
 # Short-document regression cases
 
-This directory holds 23 search queries whose relevant documents are short. With
+This directory holds 28 search queries whose relevant documents are short. With
 the old pruning default (keep 30% of document tokens), Witchcraft did not return
 any of these relevant documents in the top 100 results. Without pruning,
 Witchcraft returned every relevant document in the top 100. The cases protect
@@ -17,30 +17,33 @@ document keeps many tokens, so some identifying tokens survive. A short document
 keeps only a few tokens, and the gate can give its highest scores to generic
 tokens.
 
-Case `regress-short-cqa:54919` shows the failure. The query is
-"rooting xperia tipo dual st21i2x". The only relevant document has 20 words and
-30 tokens:
+Case `regress-short-cqa:71611` shows the failure. The query is
+"Recovery contact after factory reset". The only relevant document has 38 words
+and 45 tokens:
 
-> How Can I Root my Sony Ericsson Xperia Tipo Dual? How can I root my Sony
-> Ericsson Xperia Tipo Dual?
+> I have reset my phone samsung galaxy fit through factory data reset... Now my
+> contacts are deleted How can I recover my contacts? (They were stored on phone
+> memory.) I have also saved all my sd card data.
 
-At keep 30%, the document keeps 9 tokens. `warp-cli saliency` shows the gate scores:
+At keep 30%, the document keeps 14 tokens. `warp-cli saliency` shows the gate scores:
 
-| Kept: the 9 highest gate scores | Removed |
+| Kept: the 14 highest gate scores | Removed |
 | --- | --- |
-| `?`, `Tip`, `root`, `Root`, `I`, `my` (twice), `X`, `per` | `Sony` (twice), `Eric`, `sson`, `ia`, `o`, `Dual` (twice), `How`, `can`, and the other tokens |
+| `phone` (twice), `ams`, `ung`, `galaxy`, `factory`, `data` (twice), `contacts` (twice), `recover`, `stored`, `memory`, `card` | `reset` (twice), `deleted`, `fit`, `sd`, and the function words |
 
-The kept tokens are mostly generic: "root", "I" and "my". The gate removed most
-of the tokens that identify the phone: "Sony", "Ericsson", "Dual" and the "ia"
-of "Xperia". 3,801 of the 22,998 documents in the corpus contain the word
-"root", so after pruning, many other rooting questions match the query as well
-as the relevant document does.
+The gate removed both "reset" tokens, although the query contains "reset", and
+kept tokens that many other documents also contain: 1,101 of the 22,998
+documents in the corpus contain "contacts", and 1,310 contain "recover". So after
+pruning, many other questions about contacts and recovery match the query as
+well as the relevant document does.
 
 | Configuration | Rank of the relevant document |
 | --- | --- |
-| No pruning, query salience on | 2 |
+| No pruning, query salience on | 1 |
 | Keep 30%, query salience on (the default until 2026-10-17) | not in the top 100 |
-| Keep 70%, query salience on (the current default) | 6 |
+| Keep 70%, query salience on (the current default) | 1 |
+
+The ranks were the same on the earlier base and on the current base.
 
 The other cases have the same pattern. The documents are short questions,
 short emails (for example a read receipt, or a two-line note with a contact
@@ -60,10 +63,10 @@ name) and Wikipedia stubs (for example a village with one population number).
    The public BEIR datasets have few short documents, so the mean scores of
    those datasets do not show this failure.
 4. **The two sources cover two query types.**
-   - `regress-short-cqa` (12 cases) uses BEIR CQADupStack (Android): short
+   - `regress-short-cqa` (10 cases) uses BEIR CQADupStack (Android): short
      technical questions with human relevance labels. The corpus can be built
      again exactly, so the ranks can be compared between machines.
-   - `regress-short-mix` (11 cases) uses the hard known-item set: paraphrased
+   - `regress-short-mix` (18 cases) uses the hard known-item set: paraphrased
      queries for short Enron emails and short Wikipedia pages. These queries use
      words that are different from the words of the document, which is the most
      difficult case for a pruned document.
@@ -71,8 +74,8 @@ name) and Wikipedia stubs (for example a village with one population number).
 ## Selection criteria
 
 `scripts/short_doc_regression.py select` chose the cases from the result
-directory `bench-results/eval/keep70-check` (2026-10-17). A case must meet all
-of these conditions:
+directory `bench-results/eval/keep70-check-rebased` (2026-11-02, base `30ef816`).
+A case must meet all of these conditions:
 
 1. The query is in the test split of CQADupStack (Android) or of the hard
    known-item set (`public-mix-hard`).
@@ -85,8 +88,22 @@ of these conditions:
    mixed and unknown, and `cases.jsonl` stores the document text. This rule
    removed 1 case.
 
-The other six eval datasets (NFCorpus, SciFact, ArguAna, SciDocs, FiQA and the
-first known-item set) had no query that met conditions 2 to 4.
+On the earlier base, the other six eval datasets (NFCorpus, SciFact, ArguAna,
+SciDocs, FiQA and the first known-item set) had no query that met conditions 2
+to 4.
+
+### Selection history
+
+| Date | Base | Cases (cqa / mix) | Reason |
+| --- | --- | --- | --- |
+| 2026-10-17 | `cb3beef` | 23 (12 / 11) | The first selection. |
+| 2026-11-02 | `30ef816` | 28 (10 / 18) | The upstream commit `89d122a` ("Disable ModernBERT tokenizer truncation at load time") stopped the tokenizer from cutting each text at 256 tokens. Long distractor documents then kept all their tokens, and the ranks changed. On the new base, 4 of the 11 old `regress-short-mix` cases failed even without pruning, so those cases no longer met condition 3, and the old check failed (Recall@100 0.636 against a limit of 0.72). The selection ran again with the same criteria. 12 of the 23 old cases are still cases. |
+
+The ranks of single cases change when the ranking code changes. For example,
+the old case `regress-short-cqa:54919` ("rooting xperia tipo dual st21i2x") is
+at rank 1 without pruning, 16 at keep 30% and 38 at keep 70% on the new base, so
+that query no longer meets condition 4. Select the cases again after an upstream
+change to the encoder, the tokenizer or the ranking code.
 
 ## The case file
 
@@ -113,13 +130,13 @@ Recall@100:
 
 | Dataset | Cases | Recall@100 at selection: no pruning / 30% / 70% | Check |
 | --- | --- | --- | --- |
-| `regress-short-cqa` | 12 | 1.00 / 0.00 / 0.92 | Recall@100 >= 0.83 |
-| `regress-short-mix` | 11 | 1.00 / 0.00 / 0.82 | Recall@100 >= 0.72 |
+| `regress-short-cqa` | 10 | 1.00 / 0.00 / 0.90 | Recall@100 >= 0.79 |
+| `regress-short-mix` | 18 | 1.00 / 0.00 / 0.72 | Recall@100 >= 0.66 |
 
 Each check allows one more lost case than the current default. One case is
-8% of the cases in `regress-short-cqa` and 9% of the cases in
+10% of the cases in `regress-short-cqa` and 6% of the cases in
 `regress-short-mix`, and some documents are near rank 100 (for example ranks
-89 and 97), so a small change to the ranking code can move one case across the
+72 and 76), so a small change to the ranking code can move one case across the
 limit.
 
 The distractors of each case are the full corpus of its source dataset, because
@@ -146,7 +163,7 @@ make eval-regression EVAL_REGRESSION_CONFIGS=mb-default   # the old 30% default:
 
 | Configuration | `regress-short-cqa` Recall@100 | `regress-short-mix` Recall@100 | Result |
 | --- | --- | --- | --- |
-| Keep 70% (current default) | 0.917 | 0.818 | pass |
+| Keep 70% (current default) | 0.900 | 0.722 | pass |
 | Keep 30% (`mb-default`) | 0.000 | 0.000 | fail |
 
 The first run downloads CQADupStack (Android) and builds the indexes, which takes
@@ -178,7 +195,8 @@ The test needs the public mixed corpus in `datasets/eval/public-mix-hard.tsv` or
 `datasets/public-mix.tsv`. `make pickbrain-short-doc-test` makes the corpus when
 neither file exists. To make the corpus separately, run `make public-mix-corpus`.
 
-Result on 2026-11-02, with 2 builds on an Apple Silicon Mac:
+Result on 2026-11-02, with 2 builds on an Apple Silicon Mac, on the earlier base
+(`cb3beef`, before the tokenizer fix `89d122a`):
 
 | Build | Notes shown, keep 30% | Notes shown, keep 70% | In the top 5, 30% / 70% | Shown only at 70% / only at 30% |
 | --- | --- | --- | --- | --- |
@@ -198,10 +216,10 @@ each document. `scripts/short_doc_regression.py select-pickbrain` writes the fil
   selected because the 30% configuration failed on them, so the scores are
   biased by design. Do not report the Recall@100 of these sets as search
   quality, and do not tune settings on these sets.
-- **The set is small.** 23 cases find a return of the failure, but the cases
+- **The set is small.** 28 cases find a return of the failure, but the cases
   cannot measure a small change in quality.
-- **The current default does not pass every case.** At keep 70%, 3 of the 23
-  relevant documents are still outside the top 100. Those cases show the
+- **The current default does not pass every case.** At keep 70%, 6 of the 28
+  relevant documents are still outside the top 100 (1 of 10 and 5 of 18). Those cases show the
   remaining risk for short documents.
 
 ## Sources and licenses
